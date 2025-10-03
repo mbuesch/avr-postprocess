@@ -1,0 +1,33 @@
+# -*- coding: utf-8 -*-
+
+[package]
+name = "avr-postprocess"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+authors = [ "Michael Büsch <m@bues.ch>" ]
+homepage = "https://bues.ch/"
+#repository = "https://github.com/mbuesch/avr-postprocess"
+#readme = "README.md"
+#categories = [ ]
+#keywords = [ ]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", default-features = false, features = [ "std", "help", "usage", "error-context", "derive" ] }
+elf = "0.8"
+regex = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "sync", "signal", "time", "fs", "io-util" ] }
+
+[profile.dev]
+debug = "limited"
+panic = "abort"
+
+[profile.release]
+lto = "fat"
+panic = "abort"
+strip = "symbols"
+
+# vim: ts=4 sw=4 expandtab
