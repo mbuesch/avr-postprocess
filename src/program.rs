@@ -223,12 +223,18 @@ impl Program {
             Err(err!("No device info."))
         }
     }
+
+    pub fn fixup_data_load_addr(&mut self) -> ah::Result<()> {
+        //TODO
+        Ok(())
+    }
 }
 
 impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         if let Some(sect) = self.section_text() {
             writeln!(f, ".cseg ;flash")?;
+            writeln!(f, "____section_text__:")?;
             for part in sect.parts() {
                 writeln!(f, "{}: ;{}", part.name(), part.demangled())?;
                 for insn in part.insns() {
@@ -239,6 +245,7 @@ impl std::fmt::Display for Program {
         if let Some(sect) = self.section_data() {
             writeln!(f)?;
             writeln!(f, ".cseg ;flash")?;
+            writeln!(f, "____section_data__:")?;
             for i in 0..sect.data().len() {
                 if i % 8 == 0 {
                     if i != 0 {

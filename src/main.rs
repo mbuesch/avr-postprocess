@@ -24,11 +24,11 @@ struct Opts {
 
     output: PathBuf,
 
-    #[arg(long)]
-    no_optimize: bool,
+    #[arg(short = 'O', long)]
+    optimize: Vec<String>,
 
-    #[arg(long)]
-    output_asm: bool,
+    #[arg(short = 'A', long)]
+    dump_asm: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -45,19 +45,18 @@ async fn main() -> ah::Result<()> {
         .await
         .context("Disassemble program")?;
 
-    if !opts.no_optimize {
-        optimize_program(&mut program)
-            .await
-            .context("Optimize program")?;
-    }
+    program.fixup_data_load_addr().context("Fixup .data")?;
 
-    if opts.output_asm {
-        //TODO
+    optimize_program(&mut program, &opts.optimize)
+        .await
+        .context("Optimize program")?;
+
+    assemble_hex(&program, &opts.output)
+        .await
+        .context("Assemble program")?;
+
+    if opts.dump_asm {
         println!("{}", program.to_asm()?)
-    } else {
-        assemble_hex(&program, &opts.output)
-            .await
-            .context("Assemble program")?;
     }
 
     Ok(())
