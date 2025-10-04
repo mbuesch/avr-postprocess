@@ -31,6 +31,10 @@ impl Insn {
         &self.ops
     }
 
+    pub fn ops_mut(&mut self) -> &mut [String] {
+        &mut self.ops
+    }
+
     pub fn set_op(&mut self, index: usize, op: String) {
         self.ops[index] = op;
     }
@@ -97,6 +101,10 @@ impl Part {
         &self.insns
     }
 
+    pub fn insns_mut(&mut self) -> &mut [Insn] {
+        &mut self.insns
+    }
+
     pub fn insn_at(&self, index: usize) -> &Insn {
         &self.insns[index]
     }
@@ -143,6 +151,15 @@ impl CodeSection {
 
     pub fn add_part(&mut self, part: Part) {
         self.parts.push(part);
+    }
+
+    #[allow(unused)]
+    pub fn find_part(&self, name: &str) -> Option<&Part> {
+        self.parts.iter().find(|p| p.name() == name)
+    }
+
+    pub fn find_part_mut(&mut self, name: &str) -> Option<&mut Part> {
+        self.parts.iter_mut().find(|p| p.name() == name)
     }
 }
 
@@ -225,8 +242,36 @@ impl Program {
     }
 
     pub fn fixup_data_load_addr(&mut self) -> ah::Result<()> {
-        //TODO
-        Ok(())
+        let Some(text) = self.section_text_mut() else {
+            return Err(err!("No .text section."));
+        };
+        let Some(fcopy) = text.find_part_mut("__do_copy_data") else {
+            return Err(err!(
+                "Function '__do_copy_data' not found in .text section."
+            ));
+        };
+
+        let mut zl = false;
+        let mut zh = false;
+        for insn in fcopy.insns_mut() {
+            if insn.name() == "ldi" {
+                let ops = insn.ops_mut();
+                if ops.len() == 2 {
+                    if ops[0] == "r30" {
+                        ops[1] = "low(____section_data__ * 2)".to_string();
+                        zl = true;
+                    } else if ops[0] == "r31" {
+                        ops[1] = "high(____section_data__ * 2)".to_string();
+                        zh = true;
+                    }
+                }
+            }
+            if zl && zh {
+                return Ok(());
+            }
+        }
+
+        Err(err!("__do_copy_data: flash load address not found."))
     }
 }
 
