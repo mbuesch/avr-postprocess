@@ -3,17 +3,14 @@
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
 use crate::{
-    avr_deviceinfo::AvrDeviceInfoDesc,
+    avr_deviceinfo::{AvrElfBytes, elf_avr_deviceinfo},
     program::{CodeSection, DataSection, Insn, Part, Program},
 };
 use anyhow::{self as ah, Context as _, format_err as err};
-use elf::{ElfBytes, endian::LittleEndian, note::Note};
 use regex::Regex;
 use rustc_demangle::demangle;
 use std::{collections::HashMap, path::Path, process::Stdio};
 use tokio::process::Command;
-
-type Elf<'a> = ElfBytes<'a, LittleEndian>;
 
 async fn resolve_references(program: &mut Program) -> ah::Result<()> {
     let Some(device) = program.device() else {
@@ -204,7 +201,10 @@ pub async fn disassemble_elf_text(program: &mut Program, file: &Path) -> ah::Res
     Ok(())
 }
 
-pub async fn extract_elf_data_section(program: &mut Program, elf: &Elf<'_>) -> ah::Result<()> {
+pub async fn extract_elf_data_section(
+    program: &mut Program,
+    elf: &AvrElfBytes<'_>,
+) -> ah::Result<()> {
     let shdr = elf
         .section_header_by_name(".data")
         .context("Parse section table")?
@@ -217,36 +217,17 @@ pub async fn extract_elf_data_section(program: &mut Program, elf: &Elf<'_>) -> a
     Ok(())
 }
 
-pub async fn extract_elf_deviceinfo(program: &mut Program, elf: &Elf<'_>) -> ah::Result<()> {
-    let shdr = elf
-        .section_header_by_name(".note.gnu.avr.deviceinfo")
-        .context("Parse section table")?
-        .context("Get .note.gnu.avr.deviceinfo section")?;
-    let notes = elf
-        .section_data_as_notes(&shdr)
-        .context("Get .note.gnu.avr.deviceinfo content")?;
-    for note in notes {
-        let Note::Unknown(note) = note else {
-            return Err(err!(".note.gnu.avr.deviceinfo: Unexpected note type."));
-        };
-        if note.n_type != 1 {
-            return Err(err!(".note.gnu.avr.deviceinfo: Note type is not 1."));
-        }
-        if note.name_str().context("Get note name")? != "AVR" {
-            return Err(err!(".note.gnu.avr.deviceinfo: Note name is not 'AVR'."));
-        }
-        let desc: AvrDeviceInfoDesc = note
-            .desc
-            .try_into()
-            .context("Parse .note.gnu.avr.deviceinfo descriptor")?;
-        program.set_device(Some(desc));
-    }
+pub async fn extract_elf_deviceinfo(
+    program: &mut Program,
+    elf: &AvrElfBytes<'_>,
+) -> ah::Result<()> {
+    program.set_device(Some(elf_avr_deviceinfo(elf)?));
     Ok(())
 }
 
 pub async fn extract_elf_data(program: &mut Program, file: &Path) -> ah::Result<()> {
     let data = std::fs::read(file).context("Read ELF input file")?;
-    let elf = Elf::minimal_parse(&data).context("Parse ELF input file")?;
+    let elf = AvrElfBytes::minimal_parse(&data).context("Parse ELF input file")?;
     extract_elf_data_section(program, &elf).await?;
     extract_elf_deviceinfo(program, &elf).await?;
     Ok(())

@@ -3,7 +3,9 @@
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
 use anyhow::{self as ah, Context as _, format_err as err};
-use elf::string_table::StringTable;
+use elf::{ElfBytes, endian::LittleEndian, note::Note, string_table::StringTable};
+
+pub type AvrElfBytes<'a> = ElfBytes<'a, LittleEndian>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AvrDeviceInfoDesc {
@@ -57,6 +59,34 @@ impl TryFrom<&[u8]> for AvrDeviceInfoDesc {
 
     fn try_from(data: &[u8]) -> ah::Result<Self> {
         Self::from_bytes(data)
+    }
+}
+
+pub fn elf_avr_deviceinfo(elf: &AvrElfBytes<'_>) -> ah::Result<AvrDeviceInfoDesc> {
+    let shdr = elf
+        .section_header_by_name(".note.gnu.avr.deviceinfo")
+        .context("Parse section table")?
+        .context("Get .note.gnu.avr.deviceinfo section")?;
+    let mut notes = elf
+        .section_data_as_notes(&shdr)
+        .context("Get .note.gnu.avr.deviceinfo content")?;
+    if let Some(note) = notes.next() {
+        let Note::Unknown(note) = note else {
+            return Err(err!(".note.gnu.avr.deviceinfo: Unexpected note type."));
+        };
+        if note.n_type != 1 {
+            return Err(err!(".note.gnu.avr.deviceinfo: Note type is not 1."));
+        }
+        if note.name_str().context("Get note name")? != "AVR" {
+            return Err(err!(".note.gnu.avr.deviceinfo: Note name is not 'AVR'."));
+        }
+        let desc: AvrDeviceInfoDesc = note
+            .desc
+            .try_into()
+            .context("Parse .note.gnu.avr.deviceinfo descriptor")?;
+        Ok(desc)
+    } else {
+        Err(err!(".note.gnu.avr.deviceinfo not found in ELF."))
     }
 }
 
