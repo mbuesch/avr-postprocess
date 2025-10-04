@@ -3,17 +3,26 @@
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
 use crate::{
-    AvrHw,
+    avr_deviceinfo::AvrDeviceInfoDesc,
     program::{CodeSection, DataSection, Insn, Part, Program},
 };
 use anyhow::{self as ah, Context as _, format_err as err};
-use elf::{ElfBytes, endian::LittleEndian};
+use elf::{ElfBytes, endian::LittleEndian, note::Note};
 use regex::Regex;
+use rustc_demangle::demangle;
 use std::{collections::HashMap, path::Path, process::Stdio};
 use tokio::process::Command;
 
-async fn resolve_references(program: &mut Program, hw: &AvrHw) -> ah::Result<()> {
-    let mut addr_map = HashMap::with_capacity(hw.flash_size());
+type Elf<'a> = ElfBytes<'a, LittleEndian>;
+
+async fn resolve_references(program: &mut Program) -> ah::Result<()> {
+    let Some(device) = program.device() else {
+        return Err(err!("No device info"));
+    };
+    let flash_size = device.flash_size;
+    let flash_mask: u16 = (flash_size - 1).try_into().context("Gen flash mask")?;
+
+    let mut addr_map = HashMap::with_capacity(flash_size.try_into()?);
     if let Some(text) = program.section_text() {
         for (p, part) in text.parts().iter().enumerate() {
             for (i, insn) in part.insns().iter().enumerate() {
@@ -46,7 +55,7 @@ async fn resolve_references(program: &mut Program, hw: &AvrHw) -> ah::Result<()>
                     };
 
                     let abs = (insn.addr() as i32 + 2 + offs) as u16;
-                    let abs = abs & hw.flash_mask();
+                    let abs = abs & flash_mask;
 
                     let Some(target) = addr_map.get(&abs) else {
                         return Err(err!("Relative offset '{offs}' target not found."));
@@ -61,7 +70,7 @@ async fn resolve_references(program: &mut Program, hw: &AvrHw) -> ah::Result<()>
                     {
                         Some(label) => label.to_string(),
                         None => {
-                            let label = format!("__rel_target_{rel_target}");
+                            let label = format!("__reltgt{rel_target}");
                             rel_target += 1;
                             program
                                 .section_text_mut()
@@ -95,15 +104,12 @@ fn sanitize_label(label: &str) -> String {
     label
 }
 
-async fn process_dasm(raw: &str, hw: &AvrHw) -> ah::Result<Program> {
+async fn process_dasm(program: &mut Program, raw: &str) -> ah::Result<()> {
     let re_format = Regex::new(r"^.*file format elf32-avr$").unwrap();
     let re_section = Regex::new(r"^Disassembly of section ([^:]+):$").unwrap();
     let re_symbol = Regex::new(r"^([0-9a-fA-F]{8})\s+<([^>]+)>:$").unwrap();
     let re_insn =
         Regex::new(r"^([0-9a-fA-F]+):\s+((?:[0-9a-fA-F]{2} )+)\s+(\S+)\s*([^;]*)").unwrap();
-
-    let mut program = Program::new();
-    let mut cur_sym = None;
 
     for line in raw.lines() {
         let line = line.trim();
@@ -124,7 +130,7 @@ async fn process_dasm(raw: &str, hw: &AvrHw) -> ah::Result<Program> {
             };
             let opers_list = opers.split(',').map(|o| o.trim().to_string()).collect();
 
-            let insn = Insn::new(name, opers_list, cur_sym.take(), addr_int);
+            let insn = Insn::new(name, opers_list, None, addr_int);
             if let Some(sect) = program.section_text_mut() {
                 if let Some(part) = sect.cur_part_mut() {
                     part.add_insn(insn);
@@ -146,7 +152,9 @@ async fn process_dasm(raw: &str, hw: &AvrHw) -> ah::Result<Program> {
             if name.starts_with(".L") {
                 // ignore
             } else if let Some(sect) = program.section_text_mut() {
-                sect.add_part(Part::new(&sanitize_label(name)));
+                let san_name = sanitize_label(name);
+                let demangled = format!("{:#}", demangle(name));
+                sect.add_part(Part::new(&san_name, &demangled));
             } else {
                 return Err(err!(
                     "Got '{name}' part at addr {addr}, \
@@ -168,12 +176,12 @@ async fn process_dasm(raw: &str, hw: &AvrHw) -> ah::Result<Program> {
         }
     }
 
-    resolve_references(&mut program, hw).await?;
+    resolve_references(program).await?;
 
-    Ok(program)
+    Ok(())
 }
 
-pub async fn disassemble_elf_text(file: &Path, hw: &AvrHw) -> ah::Result<Program> {
+pub async fn disassemble_elf_text(program: &mut Program, file: &Path) -> ah::Result<()> {
     let proc = Command::new("avr-objdump")
         .arg("--disassemble")
         .arg("-j")
@@ -192,27 +200,55 @@ pub async fn disassemble_elf_text(file: &Path, hw: &AvrHw) -> ah::Result<Program
         return Err(err!("avr-objdump --disassemble {file:?} failed"));
     }
     let asm_raw = String::from_utf8(out.stdout).context("Asm UTF-8 conversion")?;
-    let program = process_dasm(&asm_raw, hw).await?;
-    Ok(program)
+    process_dasm(program, &asm_raw).await?;
+    Ok(())
 }
 
-pub async fn extract_data(program: &mut Program, file: &Path, _hw: &AvrHw) -> ah::Result<()> {
-    let data = std::fs::read(file).context("Read ELF input file")?;
-
-    let elf = ElfBytes::<LittleEndian>::minimal_parse(&data).context("Parse ELF input file")?;
-
+pub async fn extract_elf_data_section(program: &mut Program, elf: &Elf<'_>) -> ah::Result<()> {
     let shdr = elf
         .section_header_by_name(".data")
         .context("Parse section table")?
         .context("Get .data section")?;
-
     let sdata = elf
         .section_data(&shdr)
         .context("Get .data section content")?;
     let sdata = sdata.0;
-
     program.set_section_data(Some(DataSection::new(".data".to_string(), sdata.to_vec())));
+    Ok(())
+}
 
+pub async fn extract_elf_deviceinfo(program: &mut Program, elf: &Elf<'_>) -> ah::Result<()> {
+    let shdr = elf
+        .section_header_by_name(".note.gnu.avr.deviceinfo")
+        .context("Parse section table")?
+        .context("Get .note.gnu.avr.deviceinfo section")?;
+    let notes = elf
+        .section_data_as_notes(&shdr)
+        .context("Get .note.gnu.avr.deviceinfo content")?;
+    for note in notes {
+        let Note::Unknown(note) = note else {
+            return Err(err!(".note.gnu.avr.deviceinfo: Unexpected note type."));
+        };
+        if note.n_type != 1 {
+            return Err(err!(".note.gnu.avr.deviceinfo: Note type is not 1."));
+        }
+        if note.name_str().context("Get note name")? != "AVR" {
+            return Err(err!(".note.gnu.avr.deviceinfo: Note name is not 'AVR'."));
+        }
+        let desc: AvrDeviceInfoDesc = note
+            .desc
+            .try_into()
+            .context("Parse .note.gnu.avr.deviceinfo descriptor")?;
+        program.set_device(Some(desc));
+    }
+    Ok(())
+}
+
+pub async fn extract_elf_data(program: &mut Program, file: &Path) -> ah::Result<()> {
+    let data = std::fs::read(file).context("Read ELF input file")?;
+    let elf = Elf::minimal_parse(&data).context("Parse ELF input file")?;
+    extract_elf_data_section(program, &elf).await?;
+    extract_elf_deviceinfo(program, &elf).await?;
     Ok(())
 }
 

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
+use crate::avr_deviceinfo::AvrDeviceInfoDesc;
+use anyhow::{self as ah, format_err as err};
+
 #[derive(Clone, Debug)]
 pub struct Insn {
     name: String,
@@ -65,19 +68,25 @@ impl std::fmt::Display for Insn {
 #[derive(Clone, Debug)]
 pub struct Part {
     name: String,
+    demangled: String,
     insns: Vec<Insn>,
 }
 
 impl Part {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: &str, demangled: &str) -> Self {
         Self {
             name: name.to_string(),
+            demangled: demangled.to_string(),
             insns: vec![],
         }
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn demangled(&self) -> &str {
+        &self.demangled
     }
 
     pub fn add_insn(&mut self, insn: Insn) {
@@ -162,6 +171,7 @@ impl DataSection {
 pub struct Program {
     text: Option<CodeSection>,
     data: Option<DataSection>,
+    device: Option<AvrDeviceInfoDesc>,
 }
 
 impl Program {
@@ -169,6 +179,7 @@ impl Program {
         Self {
             text: None,
             data: None,
+            device: None,
         }
     }
 
@@ -196,6 +207,22 @@ impl Program {
     pub fn section_data_mut(&mut self) -> Option<&mut DataSection> {
         self.data.as_mut()
     }
+
+    pub fn set_device(&mut self, device: Option<AvrDeviceInfoDesc>) {
+        self.device = device;
+    }
+
+    pub fn device(&self) -> Option<&AvrDeviceInfoDesc> {
+        self.device.as_ref()
+    }
+
+    pub fn to_asm(&self) -> ah::Result<String> {
+        if let Some(device) = self.device.as_ref() {
+            Ok(format!(".device {}\n\n{}", device.device_name, self))
+        } else {
+            Err(err!("No device info."))
+        }
+    }
 }
 
 impl std::fmt::Display for Program {
@@ -203,7 +230,7 @@ impl std::fmt::Display for Program {
         if let Some(sect) = self.section_text() {
             writeln!(f, ".cseg ;flash")?;
             for part in sect.parts() {
-                writeln!(f, "{}:", part.name())?;
+                writeln!(f, "{}: ;{}", part.name(), part.demangled())?;
                 for insn in part.insns() {
                     writeln!(f, "    {insn}")?;
                 }

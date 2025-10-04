@@ -4,68 +4,61 @@
 
 use crate::{
     asm::assemble_hex,
-    dasm::{disassemble_elf_text, extract_data},
+    dasm::{disassemble_elf_text, extract_elf_data},
     optimize::optimize_program,
+    program::Program,
 };
 use anyhow::{self as ah, Context as _};
 use clap::Parser;
 use std::path::PathBuf;
 
 mod asm;
+mod avr_deviceinfo;
 mod dasm;
 mod optimize;
 mod program;
 
-pub struct AvrHw {
-    name: String,
-    flash_mask: u16,
-}
-
-impl AvrHw {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn flash_mask(&self) -> u16 {
-        self.flash_mask
-    }
-
-    pub fn flash_size(&self) -> usize {
-        self.flash_mask() as usize + 1
-    }
-}
-
 #[derive(Parser, Debug)]
 struct Opts {
     input_elf: PathBuf,
-    output_hex: PathBuf,
+
+    output: PathBuf,
+
+    #[arg(long)]
+    no_optimize: bool,
+
+    #[arg(long)]
+    output_asm: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ah::Result<()> {
     let opts = Opts::parse();
 
-    //TODO
-    let hw = AvrHw {
-        name: "attiny861a".to_string(),
-        flash_mask: (1024 * 8) - 1,
-    };
+    let mut program = Program::new();
 
-    let mut program = disassemble_elf_text(&opts.input_elf, &hw)
-        .await
-        .context("Disassemble program")?;
-
-    extract_data(&mut program, &opts.input_elf, &hw)
+    extract_elf_data(&mut program, &opts.input_elf)
         .await
         .context("Extract .data section")?;
 
-    optimize_program(&mut program, &hw)
+    disassemble_elf_text(&mut program, &opts.input_elf)
         .await
-        .context("Optimize program")?;
+        .context("Disassemble program")?;
 
-    assemble_hex(&program, &opts.output_hex, &hw)
-        .await
-        .context("Assemble program")?;
+    if !opts.no_optimize {
+        optimize_program(&mut program)
+            .await
+            .context("Optimize program")?;
+    }
+
+    if opts.output_asm {
+        //TODO
+        println!("{}", program.to_asm()?)
+    } else {
+        assemble_hex(&program, &opts.output)
+            .await
+            .context("Assemble program")?;
+    }
 
     Ok(())
 }

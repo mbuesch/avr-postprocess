@@ -46,6 +46,7 @@ dependencies = [
  "clap",
  "elf",
  "regex",
+ "rustc-demangle",
  "tempfile",
  "tokio",
 ]
