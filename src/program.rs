@@ -254,17 +254,14 @@ impl Program {
         let mut zl = false;
         let mut zh = false;
         for insn in fcopy.insns_mut() {
-            if insn.name() == "ldi" {
-                let ops = insn.ops_mut();
-                if ops.len() == 2 {
-                    if ops[0] == "r30" {
-                        ops[1] = "low(____section_data__ * 2)".to_string();
-                        zl = true;
-                    } else if ops[0] == "r31" {
-                        ops[1] = "high(____section_data__ * 2)".to_string();
-                        zh = true;
-                    }
-                }
+            if insn.name() == "ldi" && insn.ops().len() == 2 && insn.ops()[0] == "r30" {
+                insn.ops_mut()[1] = "low(____section_data__ * 2)".to_string();
+                zl = true;
+            } else if insn.name() == "ldi" && insn.ops().len() == 2 && insn.ops()[0] == "r31" {
+                insn.ops_mut()[1] = "high(____section_data__ * 2)".to_string();
+                zh = true;
+            } else if zl || zh {
+                break;
             }
             if zl && zh {
                 return Ok(());
