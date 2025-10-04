@@ -1,5 +1,4 @@
 #!/bin/sh
-# vim: ts=4 sw=4 expandtab
 if [ $# -eq 2 ]; then
     in="$1"
     out="$2"
@@ -10,4 +9,5 @@ else
     echo "Usage: hex2bin INPUT.HEX [OUTPUT.BIN]" >&2
     exit 1
 fi
-exec srec_cat "$in" -Intel -Output "$out" -Binary
+exec avr-objcopy -I ihex -O binary "$in" "$out"
+# vim: ts=4 sw=4 expandtab
