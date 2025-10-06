@@ -56,7 +56,9 @@ async fn main() -> ah::Result<()> {
         .context("Assemble program")?;
 
     if opts.dump_asm {
-        println!("{}", program.to_asm()?)
+        println!("\n\n; Begin: Assembly listing");
+        println!("{}", program.to_asm()?);
+        println!("; End: Assembly listing");
     }
 
     Ok(())

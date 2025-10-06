@@ -278,7 +278,11 @@ impl std::fmt::Display for Program {
             writeln!(f, ".cseg ;flash")?;
             writeln!(f, "____section_text__:")?;
             for part in sect.parts() {
-                writeln!(f, "{}: ;{}", part.name(), part.demangled())?;
+                if part.name() == part.demangled() {
+                    writeln!(f, "{}:", part.name())?;
+                } else {
+                    writeln!(f, "{}: ; {}", part.name(), part.demangled())?;
+                }
                 for insn in part.insns() {
                     writeln!(f, "    {insn}")?;
                 }
