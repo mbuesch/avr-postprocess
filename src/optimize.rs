@@ -3,8 +3,10 @@
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
 use crate::program::Program;
-use anyhow::{self as ah, format_err as err};
+use anyhow::{self as ah, Context as _, format_err as err};
 use std::collections::BTreeMap;
+
+mod main_prologue;
 
 enum Steps {
     MainPrologue,
@@ -12,12 +14,15 @@ enum Steps {
 
 const PRIO_MAIN_PROLOGUE: i32 = 0;
 
-async fn run_step(step: &Steps) -> ah::Result<()> {
-    //TODO
-    Ok(())
+async fn run_step(program: &mut Program, step: &Steps) -> ah::Result<()> {
+    match step {
+        Steps::MainPrologue => main_prologue::run(program)
+            .await
+            .context("Optimizer: main-prologue"),
+    }
 }
 
-pub async fn optimize_program(_program: &mut Program, steps: &[String]) -> ah::Result<()> {
+pub async fn optimize_program(program: &mut Program, steps: &[String]) -> ah::Result<()> {
     let mut active_steps = BTreeMap::new();
 
     for step in steps {
@@ -32,7 +37,7 @@ pub async fn optimize_program(_program: &mut Program, steps: &[String]) -> ah::R
     }
 
     while let Some((_, step)) = active_steps.pop_first() {
-        run_step(&step).await?;
+        run_step(program, &step).await?;
     }
 
     Ok(())

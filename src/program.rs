@@ -6,11 +6,31 @@ use crate::avr_deviceinfo::AvrDeviceInfoDesc;
 use anyhow::{self as ah, format_err as err};
 
 #[derive(Clone, Debug)]
+pub struct Patch {
+    insns: Vec<Insn>,
+}
+
+impl Patch {
+    pub fn new(insns: Vec<Insn>) -> Self {
+        Self { insns }
+    }
+
+    pub fn empty() -> Self {
+        Self::new(vec![])
+    }
+
+    pub fn insns(&self) -> &[Insn] {
+        &self.insns
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Insn {
     name: String,
     ops: Vec<String>,
     label: Option<String>,
     addr: u16,
+    patch: Option<Patch>,
 }
 
 impl Insn {
@@ -20,6 +40,7 @@ impl Insn {
             label,
             ops,
             addr,
+            patch: None,
         }
     }
 
@@ -49,6 +70,14 @@ impl Insn {
 
     pub fn addr(&self) -> u16 {
         self.addr
+    }
+
+    pub fn patch(&self) -> Option<&Patch> {
+        self.patch.as_ref()
+    }
+
+    pub fn set_patch(&mut self, patch: Option<Patch>) {
+        self.patch = patch;
     }
 }
 
@@ -139,6 +168,10 @@ impl CodeSection {
 
     pub fn parts(&self) -> &[Part] {
         &self.parts
+    }
+
+    pub fn parts_mut(&mut self) -> &mut [Part] {
+        &mut self.parts
     }
 
     pub fn part_at(&self, index: usize) -> &Part {
@@ -284,7 +317,13 @@ impl std::fmt::Display for Program {
                     writeln!(f, "{}: ; {}", part.name(), part.demangled())?;
                 }
                 for insn in part.insns() {
-                    writeln!(f, "    {insn}")?;
+                    if let Some(patch) = insn.patch() {
+                        for pinsn in patch.insns() {
+                            writeln!(f, "    {pinsn}")?;
+                        }
+                    } else {
+                        writeln!(f, "    {insn}")?;
+                    }
                 }
             }
         }
