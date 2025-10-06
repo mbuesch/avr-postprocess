@@ -58,24 +58,33 @@ async fn resolve_references(program: &mut Program) -> ah::Result<()> {
                         return Err(err!("Relative offset '{offs}' target not found."));
                     };
 
-                    let target_label = match program
-                        .section_text()
-                        .unwrap()
-                        .part_at(target.0)
-                        .insn_at(target.1)
-                        .label()
-                    {
-                        Some(label) => label.to_string(),
-                        None => {
-                            let label = format!("__reltgt{rel_target}");
-                            rel_target += 1;
-                            program
-                                .section_text_mut()
-                                .unwrap()
-                                .part_at_mut(target.0)
-                                .insn_at_mut(target.1)
-                                .set_label(Some(label.to_string()));
-                            label
+                    let target_label = if target.1 == 0 {
+                        program
+                            .section_text()
+                            .unwrap()
+                            .part_at(target.0)
+                            .name()
+                            .to_string()
+                    } else {
+                        match program
+                            .section_text()
+                            .unwrap()
+                            .part_at(target.0)
+                            .insn_at(target.1)
+                            .label()
+                        {
+                            Some(label) => label.to_string(),
+                            None => {
+                                let label = format!("__reltgt{rel_target:04X}");
+                                rel_target += 1;
+                                program
+                                    .section_text_mut()
+                                    .unwrap()
+                                    .part_at_mut(target.0)
+                                    .insn_at_mut(target.1)
+                                    .set_label(Some(label.to_string()));
+                                label
+                            }
                         }
                     };
 
