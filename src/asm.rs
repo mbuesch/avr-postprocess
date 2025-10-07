@@ -2,21 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 // Copyright (C) 2025 Michael Büsch <m@bues.ch>
 
-use crate::program::Program;
 use anyhow::{self as ah, Context as _, format_err as err};
 use std::{path::Path, process::Stdio};
 use tempfile::tempdir;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt as _, process::Command};
 
-pub async fn assemble_hex(program: &Program, out_hex: &Path) -> ah::Result<()> {
+pub async fn assemble_hex(asm_text: &str, out_hex: &Path) -> ah::Result<()> {
     let temp_dir = tempdir().context("Create temporary directory")?;
 
     let mut in_asm = temp_dir.path().to_path_buf();
     in_asm.push("in.asm");
-
-    let asm_text = program
-        .to_asm()
-        .context("Convert program to assembly code")?;
 
     let mut in_asm_file = OpenOptions::new()
         .create(true)

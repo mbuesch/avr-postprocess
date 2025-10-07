@@ -11,6 +11,7 @@ use crate::{
 use anyhow::{self as ah, Context as _};
 use clap::Parser;
 use std::path::PathBuf;
+use tokio::{fs::OpenOptions, io::AsyncWriteExt as _};
 
 mod asm;
 mod avr_deviceinfo;
@@ -28,7 +29,7 @@ struct Opts {
     optimize: Vec<String>,
 
     #[arg(short = 'A', long)]
-    dump_asm: bool,
+    dump_asm: Option<String>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -51,14 +52,31 @@ async fn main() -> ah::Result<()> {
         .await
         .context("Optimize program")?;
 
-    assemble_hex(&program, &opts.output)
+    let asm_text = program
+        .to_asm()
+        .context("Convert program to assembly code")?;
+
+    assemble_hex(&asm_text, &opts.output)
         .await
         .context("Assemble program")?;
 
-    if opts.dump_asm {
-        println!("\n\n; Begin: Assembly listing");
-        println!("{}", program.to_asm()?);
-        println!("; End: Assembly listing");
+    if let Some(dump_asm) = &opts.dump_asm {
+        if dump_asm == "-" {
+            println!("\n\n; Begin: Assembly listing");
+            println!("{asm_text}");
+            println!("; End: Assembly listing");
+        } else {
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(dump_asm)
+                .await
+                .context("Open --dump-asm file")?
+                .write_all(asm_text.as_bytes())
+                .await
+                .context("Write --dump-asm file")?
+        }
     }
 
     Ok(())
