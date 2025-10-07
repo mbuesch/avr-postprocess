@@ -190,6 +190,7 @@ async fn process_dasm(program: &mut Program, raw: &str) -> ah::Result<()> {
 pub async fn disassemble_elf_text(program: &mut Program, file: &Path) -> ah::Result<()> {
     let proc = Command::new("avr-objdump")
         .arg("--disassemble")
+        .arg("--disassemble-zeroes")
         .arg("-j")
         .arg(".text")
         .arg(file)
