@@ -6,11 +6,11 @@ use crate::avr_deviceinfo::AvrDeviceInfoDesc;
 use anyhow::{self as ah, format_err as err};
 
 #[derive(Clone, Debug)]
-pub struct Patch {
+pub struct InsnPatch {
     insns: Vec<Insn>,
 }
 
-impl Patch {
+impl InsnPatch {
     pub fn new(insns: Vec<Insn>) -> Self {
         Self { insns }
     }
@@ -30,7 +30,7 @@ pub struct Insn {
     ops: Vec<String>,
     label: Option<String>,
     addr: u16,
-    patch: Option<Patch>,
+    patch: Option<InsnPatch>,
 }
 
 impl Insn {
@@ -72,11 +72,11 @@ impl Insn {
         self.addr
     }
 
-    pub fn patch(&self) -> Option<&Patch> {
+    pub fn patch(&self) -> Option<&InsnPatch> {
         self.patch.as_ref()
     }
 
-    pub fn set_patch(&mut self, patch: Option<Patch>) {
+    pub fn set_patch(&mut self, patch: Option<InsnPatch>) {
         self.patch = patch;
     }
 }
@@ -99,10 +99,26 @@ impl std::fmt::Display for Insn {
 }
 
 #[derive(Clone, Debug)]
+pub struct PartPatch {
+    part: Part,
+}
+
+impl PartPatch {
+    pub fn new(part: Part) -> Self {
+        Self { part }
+    }
+
+    pub fn part(&self) -> &Part {
+        &self.part
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Part {
     name: String,
     demangled: String,
     insns: Vec<Insn>,
+    patch: Option<Box<PartPatch>>,
 }
 
 impl Part {
@@ -111,7 +127,12 @@ impl Part {
             name: name.to_string(),
             demangled: demangled.to_string(),
             insns: vec![],
+            patch: None,
         }
+    }
+
+    pub fn clone_empty(&self) -> Part {
+        Self::new(self.name(), self.demangled())
     }
 
     pub fn name(&self) -> &str {
@@ -140,6 +161,18 @@ impl Part {
 
     pub fn insn_at_mut(&mut self, index: usize) -> &mut Insn {
         &mut self.insns[index]
+    }
+
+    pub fn patch(&self) -> Option<&PartPatch> {
+        self.patch.as_deref()
+    }
+
+    pub fn set_patch(&mut self, patch: Option<PartPatch>) {
+        self.patch = patch.map(Box::new);
+    }
+
+    pub fn set_patch_delete_part(&mut self) {
+        self.set_patch(Some(PartPatch::new(self.clone_empty())));
     }
 }
 
@@ -307,23 +340,38 @@ impl Program {
 
 impl std::fmt::Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        fn write_insn(f: &mut std::fmt::Formatter<'_>, insn: &Insn) -> Result<(), std::fmt::Error> {
+            writeln!(f, "    {insn}")
+        }
+
+        fn write_part(f: &mut std::fmt::Formatter<'_>, part: &Part) -> Result<(), std::fmt::Error> {
+            if part.name() == part.demangled() {
+                writeln!(f, "{}:", part.name())?;
+            } else {
+                writeln!(f, "{}: ; {}", part.name(), part.demangled())?;
+            }
+            for insn in part.insns() {
+                if let Some(patch) = insn.patch() {
+                    for pinsn in patch.insns() {
+                        write_insn(f, pinsn)?;
+                    }
+                } else {
+                    write_insn(f, insn)?;
+                }
+            }
+            Ok(())
+        }
+
         if let Some(sect) = self.section_text() {
             writeln!(f, ".cseg ;flash")?;
             writeln!(f, "____section_text__:")?;
             for part in sect.parts() {
-                if part.name() == part.demangled() {
-                    writeln!(f, "{}:", part.name())?;
-                } else {
-                    writeln!(f, "{}: ; {}", part.name(), part.demangled())?;
-                }
-                for insn in part.insns() {
-                    if let Some(patch) = insn.patch() {
-                        for pinsn in patch.insns() {
-                            writeln!(f, "    {pinsn}")?;
-                        }
-                    } else {
-                        writeln!(f, "    {insn}")?;
+                if let Some(patch) = part.patch() {
+                    if !patch.part().insns().is_empty() {
+                        write_part(f, patch.part())?;
                     }
+                } else {
+                    write_part(f, part)?;
                 }
             }
         }
