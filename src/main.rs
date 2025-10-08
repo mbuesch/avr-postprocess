@@ -5,7 +5,7 @@
 use crate::{
     asm::assemble_hex,
     dasm::{disassemble_elf_text, extract_elf_data},
-    optimize::optimize_program,
+    patch::patch_program,
     program::Program,
 };
 use anyhow::{self as ah, Context as _};
@@ -16,7 +16,7 @@ use tokio::{fs::OpenOptions, io::AsyncWriteExt as _};
 mod asm;
 mod avr_deviceinfo;
 mod dasm;
-mod optimize;
+mod patch;
 mod program;
 
 #[derive(Parser, Debug)]
@@ -25,8 +25,8 @@ struct Opts {
 
     output: PathBuf,
 
-    #[arg(short = 'O', long)]
-    optimize: Vec<String>,
+    #[arg(short = 'P', long)]
+    patch: Vec<String>,
 
     #[arg(short = 'A', long)]
     dump_asm: Option<String>,
@@ -48,9 +48,9 @@ async fn main() -> ah::Result<()> {
 
     program.fixup_data_load_addr().context("Fixup .data")?;
 
-    optimize_program(&mut program, &opts.optimize)
+    patch_program(&mut program, &opts.patch)
         .await
-        .context("Optimize program")?;
+        .context("Patch program")?;
 
     let asm_text = program
         .to_asm()

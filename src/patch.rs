@@ -6,7 +6,7 @@ use crate::program::Program;
 use anyhow::{self as ah, Context as _, format_err as err};
 use std::collections::BTreeMap;
 
-macro_rules! define_optimizers {
+macro_rules! define_patchers {
     (
         $(
             {
@@ -43,7 +43,7 @@ macro_rules! define_optimizers {
                 }
             }
 
-            pub async fn optimize_program(program: &mut Program, steps: &[String]) -> ah::Result<()> {
+            pub async fn patch_program(program: &mut Program, steps: &[String]) -> ah::Result<()> {
                 let mut active_steps = BTreeMap::new();
 
                 for step in steps {
@@ -69,7 +69,7 @@ macro_rules! define_optimizers {
     }
 }
 
-define_optimizers! {
+define_patchers! {
     {
         module: main_prologue,
         name: "main-prologue",
