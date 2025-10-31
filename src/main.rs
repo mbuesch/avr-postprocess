@@ -13,6 +13,7 @@ use clap::Parser;
 use std::path::PathBuf;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt as _};
 
+mod abi;
 mod asm;
 mod avr_deviceinfo;
 mod dasm;
