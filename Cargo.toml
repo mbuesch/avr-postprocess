@@ -2,16 +2,16 @@
 
 [package]
 name = "avr-postprocess"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 authors = [ "Michael Büsch <m@bues.ch>" ]
 homepage = "https://bues.ch/"
-#repository = "https://github.com/mbuesch/avr-postprocess"
-#readme = "README.md"
-#categories = [ ]
-#keywords = [ ]
+repository = "https://github.com/mbuesch/avr-postprocess"
+readme = "README.md"
+categories = [ "development-tools", "compilers", "command-line-utilities", "embedded", "hardware-support" ]
+keywords = [ "avr", "optimizer" ]
 
 [dependencies]
 anyhow = "1"
@@ -21,7 +21,7 @@ paste = "1"
 regex = "1"
 rustc-demangle = "0.1"
 tempfile = "3"
-tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "sync", "signal", "time", "fs", "io-util" ] }
+tokio = { version = "1", features = [ "process", "rt-multi-thread", "macros", "sync", "signal", "time", "fs", "io-util" ] }
 
 [profile.dev]
 debug = "limited"
