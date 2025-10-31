@@ -37,7 +37,12 @@ pub async fn run(program: &mut Program) -> ah::Result<()> {
     }
 
     for part in text.parts_mut() {
-        if !c_entry_patched && part.demangled() == "L0^A" {
+        if !c_entry_patched &&
+            part.insns().len() >= 1 &&
+            [ "rcall", "call" ].contains(&part.insns()[0].name()) &&
+            part.insns()[0].ops().len() == 1 &&
+            part.insns()[0].ops()[0] == "main"
+        {
             // This is the entry from the C-rt init.
             // Directly jump to the Rust main.
             let mut new_part = part.clone_empty();
